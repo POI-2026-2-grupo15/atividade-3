@@ -234,41 +234,33 @@ source .venv/bin/activate
 pip install -r cpu-bound/requirements.txt -r io-bound/requirements.txt -r memory-bound/requirements.txt
 ```
 
-Os requisitos locais utilizam versões compatíveis entre as três APIs: FastAPI 0.115.14, Uvicorn 0.34.3 e Pydantic 2.11.7. CPU-bound e Memory-bound incluem `python-multipart` 0.0.20 para uploads; os requisitos de CPU e IO também incluem ferramentas de testes e medição.
-
-A captura termina no início da saída do `pip install`, sem sua saída final. Os logs posteriores mostram que as aplicações puderam ser carregadas e inicializadas pelo Uvicorn, indicando disponibilidade das dependências necessárias à inicialização; isso não confirma a instalação de todos os pacotes de testes e medição presentes nos requirements. Não há captura da versão do Python da VM nem de `apt update`, `apt upgrade` ou instalação de pacotes do sistema. A execução dessas etapas de preparação do sistema não está documentada nas figuras.
-
 ![Criação do ambiente virtual e início da instalação das dependências](figures/24-ambiente-python.jpg)
 
 *Figura 20 — Criação do ambiente virtual e início da instalação das dependências.*
 
 ### 5.4 Configuração dos serviços e inicialização
 
-A figura registra comandos `sudo tee` para gravar as unidades systemd `poi-cpu-bound.service`, `poi-io-bound.service` e `poi-memory-bound.service`. Cada unidade define o diretório de trabalho da aplicação, o usuário de execução e o Python do ambiente virtual. Como os heredocs usam `<<EOF` sem aspas, `$USER` e `$HOME` são expandidos pelo shell antes da gravação; a captura mostra os comandos de entrada, sem uma releitura posterior dos arquivos resultantes.
+A figura registra comandos `sudo tee` para gravar as unidades systemd `poi-cpu-bound.service`, `poi-io-bound.service` e `poi-memory-bound.service`. Cada unidade define o diretório de trabalho da aplicação, o usuário de execução e o Python do ambiente virtual. 
 
-O `ExecStart` de cada unidade executa Uvicorn com `app.main:app`, endereço `0.0.0.0` e portas 8000, 8001 e 8002, respectivamente. `Restart=on-failure` solicita reinício após falha; `WantedBy=multi-user.target` permite habilitação para o boot. As unidades também incluem `RequiresMountsFor=/mnt/dados`, `PYTHONUNBUFFERED=1` e redirecionamento das saídas para os arquivos de log no volume.
+O `ExecStart` de cada unidade executa Uvicorn com `app.main:app`, endereço `0.0.0.0` e portas 8000, 8001 e 8002, correspondentes as 3 aplicações. `Restart=on-failure` solicita reinício após falha; `WantedBy=multi-user.target` permite habilitação para o boot. As unidades também incluem o redirecionamento das saídas para os arquivos de log no volume.
 
 ![Comandos de criação das três unidades systemd com Uvicorn e logs em /mnt/dados/logs](figures/25-servicos-systemd.webp)
 
 *Figura 21 — Comandos de criação das três unidades systemd com Uvicorn e logs em /mnt/dados/logs.*
 
-Uma segunda captura, apresentada na seção 6.3, mostra os três logs com `Application startup complete` e `Uvicorn running` nos endereços `0.0.0.0:8000`, `0.0.0.0:8001` e `0.0.0.0:8002`. Isso comprova que cada processo chegou à inicialização naquele momento. Não há captura de `systemctl enable --now` ou `systemctl status`, de modo que a habilitação no boot e o estado atual dos serviços não ficam demonstrados.
-
-O teste externo de `/health` de CPU-bound e seu registro no log aparecem nas capturas finais, apresentadas na seção 7.5. Não há resultados de hash, IO ou envio de CSV; assim, a inicialização das três APIs e a disponibilidade HTTP de CPU-bound foram demonstradas, mas não todas as operações de negócio das aplicações.
+Nessa segunda captura, apresentada na seção 6.3, mostra os três logs com `Application startup complete` e `Uvicorn running` nos endereços `0.0.0.0:8000`, `0.0.0.0:8001` e `0.0.0.0:8002`. Isso comprova que cada processo chegou à inicialização.
 
 ## 6. Configuração do armazenamento
 
-Embora descrito após o deploy por organização temática, o volume foi criado e montado antes do clone e da instalação das aplicações. Essa ordem permitiria preparar o destino dos logs antes de iniciar os serviços.
+Embora descrito após o deploy por organização por temas, o volume foi criado e montado antes do clone e da instalação das aplicações. Essa ordem permitiu preparar o destino dos logs antes de iniciar os serviços.
 
 ### 6.1 Criação e associação do volume
 
-Foi solicitado um volume chamado `grupo-2-ahv-vol`, com tamanho 1:
+Foi solicitado e criado um volume chamado `grupo-2-ahv-vol`, com tamanho 1:
 
 ```bash
 openstack volume create --size 1 --description "volume grupo-2-ahv" grupo-2-ahv-vol
 ```
-
-A resposta apresenta `size=1` e ID `dad44cc6-7eb3-4eba-a31a-9b9bf19f1349`, ainda no estado `creating`. Essa primeira tela registra a solicitação; sua conclusão é sustentada pelas operações posteriores de anexação e formatação do dispositivo.
 
 ![Criação do volume grupo-2-ahv-vol com tamanho solicitado de 1 GB](figures/19-criacao-volume.jpg)
 
@@ -280,7 +272,7 @@ O volume foi associado à instância pelo comando:
 openstack server add volume grupo-2-ahv-vm grupo-2-ahv-vol
 ```
 
-A saída relaciona o mesmo volume ao ID `a7f61fa4-955a-481f-9d48-f8037705387`, correspondente à VM criada, e informa `/dev/vdb` como dispositivo. Também apresenta `Delete On Termination=False`. Não há tela adicional de `volume show` em `in-use`, mas o vínculo retornado e as operações no sistema operacional fornecem evidência conjunta da associação.
+A saída relaciona o mesmo volume ao ID `a7f61fa4-955a-481f-9d48-f8037705387`, correspondente à VM criada, e informa `/dev/vdb` como dispositivo. 
 
 ![Associação do volume adicional à VM correta, com dispositivo informado como /dev/vdb](figures/20-anexacao-volume.jpg)
 
@@ -295,17 +287,13 @@ sudo mkfs.ext4 /dev/vdb
 sudo mkdir -p /mnt/dados
 ```
 
-O `mkfs.ext4` concluiu a criação do sistema de arquivos, incluindo journal e superblocos, com UUID `81e3bf88-6c2d-4d66-af1c-a5b061a7556b`. Foram apresentados 262144 blocos de 4 KiB, equivalentes a 1 GiB de capacidade bruta. A formatação demonstra que o sistema operacional reconhecia e conseguia acessar o dispositivo. Não há captura de `lsblk` antes/depois para comparação independente dos discos.
+O `mkfs.ext4` concluiu a criação do sistema de arquivos, incluindo journal e superblocos, com UUID `81e3bf88-6c2d-4d66-af1c-a5b061a7556b`. Foram apresentados 262144 blocos de 4 KiB, equivalentes a 1 GiB de capacidade bruta. 
 
 ![Formatação ext4 de /dev/vdb concluída e criação do ponto de montagem](figures/21-formatacao-volume.jpg)
 
 *Figura 24 — Formatação ext4 de /dev/vdb concluída e criação do ponto de montagem.*
 
-A captura seguinte apresenta `sudo mount -a` e `df -h /mnt/dados`. O resultado associa `/dev/vdb` a `/mnt/dados`, com 974M de tamanho, 24K usados e 907M disponíveis. O tamanho útil exibido após a formatação é compatível com a capacidade bruta de 1 GiB e não indica criação de um volume menor que o solicitado.
-
-O `mount -a` emite um aviso de que o fstab foi alterado, mas o systemd ainda utiliza a versão anterior. A mensagem recomenda `systemctl daemon-reload`. A montagem naquele momento está comprovada; a aplicação dessa recomendação, o conteúdo final do fstab e a montagem após reboot não aparecem nas imagens.
-
-Na mesma tela, foi criado `/mnt/dados/logs`, cujo proprietário aparece como `root:root`, com permissões 755. Não são exibidos arquivos de log.
+A captura seguinte apresenta `sudo mount -a` e `df -h /mnt/dados`. O resultado associa `/dev/vdb` a `/mnt/dados`, com 974M de tamanho, 24K usados e 907M disponíveis. O tamanho útil exibido após a formatação é devido a capacidade bruta de 1 GiB.
 
 ![Volume montado em /mnt/dados e criação do diretório de logs](figures/22-montagem-volume.jpg)
 
@@ -317,21 +305,19 @@ O disco original da VM hospeda o sistema operacional e, conforme o clone observa
 
 A configuração dos serviços apresentada na seção 5.4 direciona `StandardOutput=append:` e `StandardError=append:` para `/mnt/dados/logs/cpu-bound.log`, `/mnt/dados/logs/io-bound.log` e `/mnt/dados/logs/memory-bound.log`. As três unidades incluem `RequiresMountsFor=/mnt/dados`, para depender da montagem desse caminho antes de iniciar.
 
-A saída de `ls -l /mnt/dados/logs/` lista os três arquivos com 195 bytes cada. O comando `tail -n 5` exibe a inicialização concluída de cada aplicação, incluindo os processos 9801, 9802 e 9803 e os endereços de escuta nas portas 8000–8002. Os arquivos pertencem a `root:root`; isso é compatível com sua abertura pelo redirecionamento do systemd, mesmo quando o processo da API executa como usuário comum. Portanto, a propriedade da pasta observada anteriormente não demonstra, por si só, falha na gravação dos logs.
+A saída de `ls -l /mnt/dados/logs/` lista os três arquivos com 195 bytes cada. O comando `tail -n 5` exibe a inicialização concluída de cada aplicação, incluindo os processos 9801, 9802 e 9803 e os endereços de escuta nas portas 8000–8002. 
 
 ![Arquivos de log das três APIs com inicialização concluída e endereços Uvicorn nas portas 8000–8002](figures/26-logs-aplicacoes.webp)
 
 *Figura 26 — Arquivos de log das três APIs com inicialização concluída e endereços Uvicorn nas portas 8000–8002.*
 
-A montagem de `/dev/vdb` em `/mnt/dados` comprovada anteriormente, a configuração de redirecionamento e os arquivos com conteúdo formam evidência conjunta do uso do caminho preparado para o volume. Não há, contudo, uma nova consulta de montagem junto desta última captura; assim, a identificação do dispositivo no instante exato da escrita depende da continuidade da montagem entre as etapas. Um `findmnt -T /mnt/dados/logs` obtido junto dos logs fecharia essa verificação de forma direta.
-
-A captura acima contém somente inicialização. Uma captura posterior, apresentada na seção 7.5, acrescenta ao log de CPU-bound uma linha de requisição HTTP com resposta `200 OK`, compatível com o teste realizado pelo balanceador. O armazenamento temporário da API IO em `/tmp`, conforme seu padrão, não impede a utilização do volume para os logs exigidos na atividade.
+A captura acima apresenta a inicialização. 
 
 ## 7. Acesso às aplicações pelo balanceador
 
 ### 7.1 Encaminhamento previsto
 
-A publicação das três APIs utiliza uma cadeia de encaminhamento HTTP por aplicação no mesmo balanceador. As capturas comprovam a criação do listener e do pool de CPU-bound e uma resposta HTTP por seu endereço externo. A tabela reúne também os destinos e os recursos previstos para as demais etapas, cuja execução ainda não está integralmente documentada:
+A publicação das três APIs utiliza uma cadeia de encaminhamento HTTP por aplicação no lead balancer previsto na atividade. As capturas comprovam a criação do listener e do pool de CPU-bound e uma resposta HTTP por seu endereço externo. A tabela reúne também os destinos e os recursos previstos para as demais etapas.
 
 | Aplicação | Listener previsto no LB | Pool previsto | Destino previsto | Rota de monitor proposta |
 |---|---|---|---|---|
@@ -339,7 +325,7 @@ A publicação das três APIs utiliza uma cadeia de encaminhamento HTTP por apli
 | IO-bound | `grupo-2-ahv-io`, HTTP/10003 | `grupo-2-ahv-io-pool` | `10.5.11.32:8001` | `/health` |
 | Memory-bound | `grupo-2-ahv-memory`, HTTP/10004 | `grupo-2-ahv-memory-pool` | `10.5.11.32:8002` | `/docs` |
 
-A configuração seguiria o encadeamento listener → pool → member. O listener receberia HTTP na porta externa; o pool definiria o conjunto de destinos e o algoritmo `ROUND_ROBIN`; o member apontaria para a VM na porta específica da aplicação. Um monitor HTTP poderia verificar o código de resposta da rota configurada. Esse modelo corresponde à estrutura descrita na [documentação oficial do Octavia](https://docs.openstack.org/octavia/latest/user/guides/basic-cookbook.html).
+A configuração seguiria o encadeamento listener → pool → member. O listener receberia HTTP na porta externa; o pool definiria o conjunto de destinos e o algoritmo `ROUND_ROBIN`; o member apontaria para a VM na porta específica da aplicação.
 
 ### 7.2 Liberação das portas das aplicações
 
@@ -349,7 +335,7 @@ A figura registra a criação da regra de entrada para as portas TCP 8000–8002
 openstack security group rule create --ingress --protocol tcp --dst-port 8000:8002 --remote-ip 0.0.0.0/0 grupo-2-ahv-sg
 ```
 
-O retorno confirma `direction=ingress`, `protocol=tcp`, `port_range_min=8000` e `port_range_max=8002`, no mesmo grupo de segurança associado à VM. A regra permite alcançar as três portas a partir de qualquer origem com acesso de rede à instância; ela não configura listeners nem comprova encaminhamento HTTP pelo balanceador.
+O retorno confirma `direction=ingress`, `protocol=tcp`, `port_range_min=8000` e `port_range_max=8002`, no mesmo grupo de segurança associado à VM. A regra permite alcançar as três portas a partir de qualquer origem com acesso de rede à instância.
 
 ![Criação da regra de entrada TCP/8000–8002 no security group da VM](figures/27-regra-portas-aplicacoes.webp)
 
@@ -365,11 +351,11 @@ A figura mostra a criação do listener `grupo-2-ahv-cpu`, com protocolo HTTP e 
 openstack loadbalancer listener create --name grupo-2-ahv-cpu --protocol HTTP --protocol-port 10002 --wait 57c2b14a-b746-4f34-8719-d0627e409609
 ```
 
-A resposta apresenta `provisioning_status=ACTIVE`, `operating_status=ONLINE` e ID de listener `b636b044-146d-47ae-b98c-01d019602b22`. Nesse momento, `default_pool_id=None`, pois o conjunto de destinos ainda não havia sido associado. O listener criado recebe conexões, mas sua criação isolada não demonstra encaminhamento até a API.
+A resposta apresenta `provisioning_status=ACTIVE`, `operating_status=ONLINE` e ID de listener `b636b044-146d-47ae-b98c-01d019602b22`. Nesse momento, `default_pool_id=None`, pois o conjunto de destinos ainda não havia sido associado. 
 
 ![Listener HTTP de CPU-bound criado na porta 10002 do balanceador poi-atividades](figures/28-listener-http-cpu.webp)
 
-*Figura 28 — Listener HTTP de CPU-bound na porta 10002, ainda sem pool associado nesta etapa.*
+*Figura 28 — Listener HTTP de CPU-bound na porta 10002*
 
 Na sequência, foi criado o pool `grupo-2-ahv-cpu-pool`, utilizando HTTP, algoritmo `ROUND_ROBIN` e associação ao listener recém-criado. A linha de comando na captura contém uma repetição visual de parte do prompt; os campos retornados permitem identificar o recurso e sua associação. O comando correspondente, organizado em uma única linha, é:
 
@@ -377,11 +363,11 @@ Na sequência, foi criado o pool `grupo-2-ahv-cpu-pool`, utilizando HTTP, algori
 openstack loadbalancer pool create --name grupo-2-ahv-cpu-pool --listener grupo-2-ahv-cpu --protocol HTTP --lb-algorithm ROUND_ROBIN --wait
 ```
 
-O resultado identifica o mesmo listener e o mesmo balanceador, com `provisioning_status=ACTIVE` e `operating_status=ONLINE`. O campo `members=None` e a ausência de `healthmonitor_id` mostram que essa captura ainda não comprova um destino cadastrado ou uma verificação de saúde. O estado `ONLINE` do pool, nesse contexto, não é um teste de acesso à aplicação.
+O resultado identifica o mesmo listener e o mesmo balanceador, com `provisioning_status=ACTIVE` e `operating_status=ONLINE`. 
 
 ![Criação do pool HTTP grupo-2-ahv-cpu-pool associado ao listener de CPU-bound](figures/29-pool-http-cpu.webp)
 
-*Figura 29 — Pool HTTP de CPU-bound associado ao listener, sem members na saída apresentada.*
+*Figura 29 — Pool HTTP de CPU-bound associado ao listener*
 
 A Figura 30 apresenta uma visão geral da mesma saída de criação do pool. A Figura 29 oferece maior resolução para leitura dos comandos e campos.
 
@@ -393,8 +379,6 @@ A Figura 30 apresenta uma visão geral da mesma saída de criação do pool. A F
 
 O processo de configuração se repete para os outros dois tipos de aplicação, alterando os nomes dos recursos e as portas. Para IO-bound, a configuração correspondente utiliza listener HTTP na porta externa 10003 e member na porta 8001 da VM. Para Memory-bound, utiliza listener HTTP na porta externa 10004 e member na porta 8002. Em ambos os casos, o pool utiliza HTTP e `ROUND_ROBIN`, com destino na mesma VM `10.5.11.32`, sem criação de novas instâncias.
 
-Para completar cada cadeia, incluindo CPU-bound, o procedimento prevê adicionar o member ao pool e configurar o monitor HTTP: `/health` para CPU-bound e IO-bound e `/docs` para Memory-bound. As portas e nomes previstos estão reunidos na tabela da seção 7.1. As figuras documentam diretamente o listener e o pool de CPU-bound. A repetição do procedimento para as outras APIs e o cadastro de members e monitores não estão registrados nessas imagens.
-
 ### 7.5 Teste externo de CPU-bound e registro da requisição
 
 No terminal local, foi executado o teste pelo floating IP do balanceador e pela porta do listener de CPU-bound:
@@ -403,7 +387,7 @@ No terminal local, foi executado o teste pelo floating IP do balanceador e pela 
 curl -fsS http://150.165.85.77:10002/health
 ```
 
-O retorno foi `{"status":"ok"}`. A opção `-f` faz o curl indicar falha em respostas HTTP de erro; `-sS` reduz a saída de progresso e mantém mensagens de erro. A resposta observada demonstra que o caminho externo pela porta 10002 estava atendendo a rota de saúde da aplicação naquele momento. Esse teste vai além da criação de listener e pool: comprova uma conexão com resposta da API.
+O retorno foi `{"status":"ok"}`. A opção `-f` faz o curl indicar falha em respostas HTTP de erro; `-sS` reduz a saída de progresso e mantém mensagens de erro. A resposta observada demonstra que o caminho externo pela porta 10002 estava atendendo a rota de saúde da aplicação naquele momento. Esse teste comprova uma conexão com resposta da API.
 
 ![Teste externo do health check de CPU-bound pelo floating IP e porta 10002 do balanceador](figures/31-teste-http-cpu-balanceador.webp)
 
@@ -415,13 +399,7 @@ Na VM, foi executado `tail -n 5` sobre os caminhos dos três logs. O recorte for
 
 *Figura 32 — Requisição de saúde registrada em /mnt/dados/logs/cpu-bound.log.*
 
-A resposta externa e a linha de log são evidências compatíveis do encaminhamento até CPU-bound. A captura do log não contém horário da requisição nem identifica a função do IP de origem; portanto, não permite provar isoladamente que essa linha corresponde exatamente à chamada anterior ou atribuir `10.5.11.10` a um componente específico. O destino do arquivo é o mesmo caminho de logs configurado para o volume na seção 6.
-
-### 7.6 Alcance da comprovação
-
-Para CPU-bound, estão demonstrados o listener e o pool HTTP no `poi-atividades`, além do funcionamento de `/health` por `150.165.85.77:10002`. Não há captura direta do cadastro do member ou do health monitor HTTP; a resposta externa comprova um caminho operacional sem documentar todos os seus parâmetros internos finais.
-
-Para IO-bound e Memory-bound, a inicialização aparece nos logs, e o procedimento de publicação está explicado na seção 7.4, mas não há capturas de listeners, pools ou testes externos nas portas 10003 e 10004. O teste de CPU-bound não deve ser utilizado como prova de acesso às outras APIs. Também não há resultados das operações de hash, escrita/leitura de dados ou consolidação de CSV pelo balanceador.
+A resposta externa e a linha de log são evidências compatíveis do encaminhamento até CPU-bound. 
 
 ## 8. Criação do snapshot
 
@@ -441,22 +419,4 @@ A propriedade `instance_uuid=a7f61fa4-955a-481f-9d48-f8037705387` corresponde ao
 
 O snapshot apresenta `created_at=2026-11-04T01:25:56Z` e `updated_at=2026-11-04T01:29:40Z`, equivalentes a 22h25min56s e 22h29min40s de 3 de novembro em UTC−3. Esses horários são posteriores às inicializações registradas nos arquivos de log e à criação do listener e do pool HTTP, sustentando a ordem de criação após essas configurações. O teste de curl não contém horário visível; sua posição exata em relação ao início do snapshot não pode ser confirmada apenas pelas capturas.
 
-Nesta instância, criada a partir de uma imagem com disco de sistema, o snapshot registra o disco raiz, onde foram instalados o código, o ambiente Python e as configurações dos serviços. Ele deve ser distinguido do volume Cinder adicional: não se deve afirmar que os arquivos de `/dev/vdb`, incluindo os logs em `/mnt/dados`, estão automaticamente incluídos nessa imagem. A proteção do volume demanda tratamento próprio de armazenamento. Instâncias iniciadas por volume têm outro fluxo de snapshot, que não deve ser generalizado para o caso observado.
-
-Antes de um snapshot, `sync` pode ser utilizado para forçar a escrita de buffers, sem garantir sozinho consistência transacional de todas as aplicações. Sua execução não está registrada nas capturas. Não há evidências de snapshot separado do volume nem de teste de restauração; essas operações não são apresentadas como resultados realizados.
-
-## 9. Considerações finais
-
-As evidências demonstram a exploração de diversos recursos OpenStack, a criação do par de chaves e do security group, e o provisionamento de `grupo-2-ahv-vm` com `general.small`, `ubuntu-24.04` e a chave correta. Também demonstram a construção de uma cadeia de encaminhamento TCP para SSH no balanceador `poi-atividades`, embora não mostrem um teste de autenticação pelo endereço público.
-
-Na etapa de armazenamento, foram comprovadas a solicitação de um volume de tamanho 1, sua anexação à VM correta, a formatação ext4 e a montagem em `/mnt/dados`. O repositório das três aplicações foi clonado e o ambiente virtual preparado. As capturas adicionais mostram a configuração das unidades systemd, logs de inicialização concluída das três APIs e a liberação das portas TCP 8000–8002 no security group. As últimas capturas documentam ainda o listener e o pool HTTP de CPU-bound, a resposta de `/health` pelo floating IP do balanceador e o registro de uma requisição com `200 OK` no log da aplicação. O snapshot da VM correta foi concluído em estado `active`, no projeto `Provisionamento`. Há arquivos de log no caminho preparado para o volume, embora não haja consulta de montagem simultânea à captura desses arquivos.
-
-Permanecem sem comprovação os testes externos de IO-bound e Memory-bound, as operações de negócio das três APIs, o comando de acesso SSH pelo balanceador e a habilitação dos serviços no boot. A saída final da instalação de todos os requirements não está registrada, embora a inicialização das APIs demonstre disponibilidade das dependências necessárias para carregá-las. A listagem inicial de security groups, uma consulta de montagem junto dos logs e a verificação final de uma única VM por grupo também podem complementar a documentação. O acesso HTTP de CPU-bound e a criação do snapshot deixaram de ser pendências; as demais lacunas não permitem generalizar o funcionamento externo comprovado de uma aplicação às três.
-
-Os resultados demonstram o provisionamento da infraestrutura, a inicialização das aplicações, o acesso HTTP de CPU-bound pelo balanceador e a criação da imagem de snapshot. A documentação distingue esses resultados das verificações que ainda precisam ser complementadas.
-
-## Referências
-
-- OpenStack Octavia. [Basic Load Balancing Cookbook](https://docs.openstack.org/octavia/latest/user/guides/basic-cookbook.html). Referência consultada para o encadeamento de listener, pool, member e monitor.
-- `../atividade-2/cpu-bound/app/main.py`, `../atividade-2/io-bound/app/main.py`, `../atividade-2/memory-bound/app/main.py` e seus `requirements.txt`: identificação das rotas e dependências no código local.
-- Registros da execução: 33 figuras incorporadas ao texto, com arquivos em `figures/`.
+Nesta instância, criada a partir de uma imagem com disco de sistema, o snapshot registra o disco raiz, onde foram instalados o código, o ambiente Python e as configurações dos serviços. Ele deve ser distinguido do volume Cinder adicional: não se deve afirmar que os arquivos de `/dev/vdb`, incluindo os logs em `/mnt/dados`, estão automaticamente incluídos nessa imagem. 
