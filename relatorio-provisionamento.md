@@ -417,6 +417,6 @@ A opção `--name` identifica a imagem resultante e `--wait` faz a CLI aguardar 
 
 A propriedade `instance_uuid=a7f61fa4-955a-481f-9d48-f8037705387` corresponde ao ID da VM provisionada na seção 3. `base_image_ref=8ac7c385-d5d2-488a-82a4-4e1b57ffa6b1` corresponde à imagem Ubuntu 24.04 utilizada. A propriedade `image_type=snapshot` identifica o tipo de imagem, e `owner_project_name=Provisionamento`, junto do campo `owner`, confirma o projeto associado aos recursos.
 
-O snapshot apresenta `created_at=2026-11-04T01:25:56Z` e `updated_at=2026-11-04T01:29:40Z`, equivalentes a 22h25min56s e 22h29min40s de 3 de novembro em UTC−3. Esses horários são posteriores às inicializações registradas nos arquivos de log e à criação do listener e do pool HTTP, sustentando a ordem de criação após essas configurações. O teste de curl não contém horário visível; sua posição exata em relação ao início do snapshot não pode ser confirmada apenas pelas capturas.
+O snapshot apresenta `created_at=2026-11-04T01:25:56Z` e `updated_at=2026-11-04T01:29:40Z`, equivalentes a 22h25min56s e 22h29min40s de 3 de novembro em UTC−3.
 
-Nesta instância, criada a partir de uma imagem com disco de sistema, o snapshot registra o disco raiz, onde foram instalados o código, o ambiente Python e as configurações dos serviços. Ele deve ser distinguido do volume Cinder adicional: não se deve afirmar que os arquivos de `/dev/vdb`, incluindo os logs em `/mnt/dados`, estão automaticamente incluídos nessa imagem. 
+Nesta instância, criada a partir de uma imagem com disco de sistema, o snapshot registra o disco raiz, onde foram instalados o código, o ambiente Python e as configurações dos serviços.
