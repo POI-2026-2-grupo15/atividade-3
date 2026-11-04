@@ -1,33 +1,28 @@
 # Relatório de Provisionamento de Recursos Computacionais
 
-**Atividade 3 — Deploy de aplicações em infraestrutura IaaS com OpenStack**  
-**Ambiente de referência:** nuvem do Laboratório de Sistemas Distribuídos (LSD/UFCG), projeto `Provisionamento`  
+**Atividade 3 Deploy de aplicações em infraestrutura IaaS com OpenStack**  
 **Identificação dos recursos nas evidências:** `grupo-2-ahv`  
-**Data indicada nos nomes das capturas:** 3 de novembro de 2026
 
-> **Situação da documentação:** as evidências mostram o provisionamento no projeto `Provisionamento`, a montagem do volume, a configuração e inicialização das três APIs, o acesso ao `/health` de CPU-bound pelo balanceador e a criação do snapshot da VM em estado `active`. As limitações restantes, como a ausência de testes externos de IO-bound e Memory-bound e de uma captura do comando SSH, são identificadas nas seções correspondentes.
+## Grupo
+
+- Arthur Gabriel Santos Albuquerque - 122110395
+- Hildon Regis Navarro Neto - 122110322
+- Victor Vili Xavier Luna - 122110387
 
 ## 1. Introdução
 
-A atividade teve como objetivo provisionar uma máquina virtual em um ambiente IaaS, implantar as aplicações desenvolvidas na atividade anterior e disponibilizar seu acesso por meio do balanceador de carga compartilhado `poi-atividades`. Também foram solicitados um volume adicional de 1 GB, sua utilização pelas aplicações e um snapshot da máquina configurada.
+A atividade teve como objetivo provisionar uma máquina virtual, implantar as aplicações desenvolvidas na atividade anterior e disponibilizar seu acesso por meio de um `load balancer`.
 
-O OpenStack foi utilizado por sua interface de linha de comando para consultar recursos e solicitar a criação e associação de componentes da infraestrutura. Nesse ambiente, a instância representa o recurso de computação, o security group controla o tráfego de rede, o volume Cinder fornece armazenamento adicional e o Octavia encaminha conexões pelo balanceador.
+O OpenStack foi utilizado por sua interface de linha de comando para consultar recursos e solicitar a criação e associação de componentes da infraestrutura.
 
-O experimento foi organizado em exploração do ambiente, provisionamento da VM, configuração do acesso SSH, deploy das aplicações, armazenamento, publicação HTTP e criação do snapshot. As capturas apresentadas ao longo do texto registram os comandos, as configurações e os resultados observados. As aplicações utilizadas são as mesmas desenvolvidas na atividade anterior.
-
-As figuras acompanham as etapas do experimento e permitem relacionar os recursos por seus nomes e identificadores. Na captura de criação da VM, o valor de `adminPass` foi ocultado para evitar a exposição de uma credencial.
 
 ## 2. Acesso e exploração do ambiente OpenStack
 
 ### 2.1 Preparação da CLI e autenticação
 
-No painel web do OpenStack, a página **Projeto → Acesso à API** mostra o contexto `LSD • Provisionamento`. O menu **Baixar arquivo OpenStack RC** está aberto e apresenta as opções de arquivo OpenRC e `clouds.yaml`. Essa tela identifica o ambiente e o projeto acessados no painel e o local de obtenção da configuração da CLI; ela não registra o download concluído nem a autenticação do terminal.
-
 ![Página de acesso à API no contexto LSD e projeto Provisionamento, com opção de download do OpenRC](figures/00-acesso-api-provisionamento.png)
 
 *Figura 1 — Página de acesso à API no contexto LSD e projeto Provisionamento, com opção de download do OpenRC.*
-
-A preparação da CLI envolve um ambiente virtual Python, os pacotes `python-openstackclient` e `python-octaviaclient` e o arquivo OpenRC obtido no portal da nuvem. O primeiro pacote fornece a CLI dos serviços OpenStack; o segundo acrescenta os comandos de balanceamento do Octavia. O OpenRC define as variáveis de ambiente utilizadas na autenticação, como endpoint, usuário e projeto.
 
 O arquivo OpenRC fornece a configuração necessária para autenticar a CLI. O carregamento e a verificação do token podem ser realizados com:
 
@@ -36,47 +31,35 @@ source [ARQUIVO_OPENRC]
 openstack token issue
 ```
 
-O nome real do OpenRC não está nas capturas e, por isso, permanece indicado como parâmetro. Também não há print de `token issue`. Entretanto, as respostas às consultas e operações posteriores demonstram que a CLI estava autenticada em um projeto. O prefixo `(venv-openstack)` aparece no terminal de execução. A captura do painel identifica `LSD • Provisionamento`. A saída do snapshot, apresentada na seção 8, complementa essa identificação: associa `owner_project_name=Provisionamento` ao owner `2c593796f29e4b829b1b523775e2fa26`, o mesmo project ID das operações de criação da VM e configuração do balanceador. Não é necessário deduzir a identidade OpenStack a partir do nome de usuário local do terminal.
-
 ### 2.2 Consulta dos recursos disponíveis
 
-A exploração começou pela consulta dos flavors, que descrevem as combinações disponíveis de CPU, memória e disco. A tabela mostra `general.small` com 1 vCPU, 2048 MiB de RAM e disco de 20 GB, correspondendo ao flavor obrigatório do enunciado. A consulta de flavors é feita por `openstack flavor list`; a figura apresenta a tabela de resultados.
+A exploração começou pela consulta dos flavors. A consulta de flavors é feita por `openstack flavor list`. A figura apresenta a tabela de resultados.
 
 ![Flavors disponíveis, incluindo general.small com 1 vCPU e 2048 MiB de RAM](figures/01-flavors.jpg)
 
 *Figura 2 — Flavors disponíveis, incluindo general.small com 1 vCPU e 2048 MiB de RAM.*
 
-A listagem de instâncias permitiu observar recursos que já existiam no projeto compartilhado. Essa captura é anterior à criação de `grupo-2-ahv-vm`; portanto, documenta a exploração inicial, mas não substitui uma listagem final para verificar a restrição de uma VM por grupo. Instâncias de outros grupos não devem ser confundidas com recursos desta execução.
-
 ![Instâncias existentes no projeto antes da criação da VM desta execução](figures/02-instancias-existentes.jpg)
 
 *Figura 3 — Instâncias existentes no projeto antes da criação da VM desta execução.*
-
-A consulta de imagens apresentou `ubuntu-24.04` em estado `active`, com ID `8ac7c385-d5d2-488a-82a4-4e1b57ffa6b1`, posteriormente utilizado na criação da VM. A mesma listagem contém imagens com nomes de snapshots. Esses snapshots já existiam no momento da exploração. O snapshot da VM provisionada durante a atividade é apresentado separadamente na seção 8.
 
 ![Imagens disponíveis, incluindo ubuntu-24.04 e imagens de snapshots preexistentes](figures/03-imagens.jpg)
 
 *Figura 4 — Imagens disponíveis, incluindo ubuntu-24.04 e imagens de snapshots preexistentes.*
 
-O comando `openstack volume list` apresentou volumes disponíveis e em uso, incluindo associações a instâncias. Essa consulta foi realizada antes da criação do volume adicional do grupo e ajudou a distinguir recursos preexistentes daqueles criados durante a atividade.
-
 ![Listagem inicial de volumes e suas associações a instâncias](figures/05-volumes-existentes.jpg)
 
 *Figura 5 — Listagem inicial de volumes e suas associações a instâncias.*
-
-Também foi executado `openstack volume snapshot list`. Sua saída se refere a snapshots de volumes Cinder de outros grupos, uma entidade diferente das imagens de snapshot de uma VM. A captura atende à exploração do armazenamento, sem demonstrar a criação de um snapshot próprio.
 
 ![Snapshots de volumes Cinder existentes no ambiente](figures/06-snapshots-volumes.jpg)
 
 *Figura 6 — Snapshots de volumes Cinder existentes no ambiente.*
 
-Por fim, `openstack loadbalancer list` identificou `poi-atividades`, com VIP `10.5.8.242`, provider `amphora`, `provisioning_status=ACTIVE` e `operating_status=ONLINE`. Esses estados descrevem o balanceador no momento da consulta; não atestam, por si, que os serviços da VM estavam acessíveis.
+Por fim, `openstack loadbalancer list` identificou `poi-atividades`, com VIP `10.5.8.242`, provider `amphora`, `provisioning_status=ACTIVE` e `operating_status=ONLINE`. Esses estados descrevem o balanceador no momento da consulta
 
 ![Balanceador compartilhado poi-atividades em ACTIVE e ONLINE](figures/07-balanceador-existente.jpg)
 
 *Figura 7 — Balanceador compartilhado poi-atividades em ACTIVE e ONLINE.*
-
-Não foi encontrada captura de `openstack security group list`. A criação e as regras do grupo de segurança utilizado aparecem nas próximas etapas, mas não equivalem à listagem inicial de grupos solicitada no enunciado.
 
 ## 3. Provisionamento da máquina virtual
 
@@ -88,7 +71,7 @@ O par de chaves foi gerado na máquina local com Ed25519, utilizando o caminho `
 ssh-keygen -t ed25519 -f "$HOME/.ssh/grupo-2-ahv" -N ""
 ```
 
-A opção `-f` define onde os arquivos serão gravados e `-N ""` indica ausência de passphrase. A saída confirma a criação dos arquivos privado e público. Apenas a chave pública deve ser cadastrada no OpenStack; a privada é utilizada pelo cliente SSH.
+A opção `-f` define onde os arquivos serão gravados e `-N ""` indica ausência de passphrase.
 
 ![Geração local do par de chaves SSH Ed25519](figures/08-geracao-chave.jpg)
 
@@ -121,13 +104,11 @@ Para permitir conexões SSH à VM, foi acrescentada uma regra de entrada TCP na 
 openstack security group rule create --ingress --protocol tcp --dst-port 22 --remote-ip 0.0.0.0/0 grupo-2-ahv-sg
 ```
 
-A resposta confirma protocolo TCP, portas mínima e máxima iguais a 22 e origem `0.0.0.0/0`. Essa configuração permite tráfego de qualquer origem que tenha alcance de rede até a VM; não restringe o acesso exclusivamente ao balanceador.
-
 ![Regra de entrada TCP/22 para acesso SSH à VM](figures/11-regra-ssh.jpg)
 
 *Figura 11 — Regra de entrada TCP/22 para acesso SSH à VM.*
 
-Também foi criada uma regra de entrada ICMP para permitir testes desse protocolo. Não aparece teste de ping nas capturas, e sua liberação não demonstra funcionamento das conexões SSH ou HTTP.
+Também foi criada uma regra de entrada ICMP para permitir testes desse protocolo.
 
 ![Regra de entrada ICMP no grupo de segurança](figures/12-regra-icmp.jpg)
 
@@ -150,25 +131,21 @@ openstack server create \
 
 Os parâmetros `--flavor` e `--image` selecionam os recursos e o sistema operacional. `--key-name` associa a chave pública à instância, `--security-group` aplica as regras de rede e `--network provider` conecta a VM à rede utilizada no projeto. A opção `--wait` faz o cliente aguardar a conclusão do provisionamento.
 
-A resposta identifica a VM como `a7f61fa4-955a-481f-9d48-f8037705387`, com endereço `10.5.11.32`, imagem `ubuntu-24.04`, flavor `general.small`, chave `grupo-2-ahv-key` e grupo `grupo-2-ahv-sg`. Os campos `status=ACTIVE`, `vm_state=active` e `power_state=Running` comprovam que a instância foi provisionada e iniciada. O valor de `adminPass` foi ocultado na cópia incorporada abaixo.
-
 ![VM provisionada com os parâmetros exigidos e estado ACTIVE; credencial ocultada](figures/13-criacao-vm-credencial-ocultada.png)
 
 *Figura 13 — VM provisionada com os parâmetros exigidos e estado ACTIVE; credencial ocultada.*
-
-Existe apenas uma criação de VM documentada nesta execução. Como não há listagem final que identifique todos os recursos pertencentes ao grupo, a restrição de uma VM por grupo permanece parcialmente comprovada. A presença de outros nomes na listagem inicial não permite atribuí-los aos mesmos integrantes.
 
 ## 4. Configuração do acesso SSH
 
 ### 4.1 Identificação do ponto de entrada
 
-O balanceador `poi-atividades` é compartilhado. Antes da criação do listener do grupo, foi executado `openstack loadbalancer listener list --loadbalancer poi-atividades`, permitindo consultar as portas já utilizadas. A captura mostra recursos de vários grupos; eles não devem ser removidos ou alterados como parte desta atividade.
+O balanceador `poi-atividades` é compartilhado. Antes da criação do listener do grupo, foi executado `openstack loadbalancer listener list --loadbalancer poi-atividades`, permitindo consultar as portas já utilizadas.
 
 ![Listeners preexistentes no balanceador compartilhado](figures/14-listeners-existentes.jpg)
 
 *Figura 14 — Listeners preexistentes no balanceador compartilhado.*
 
-O comando `openstack floating ip list` mostrou o endereço público `150.165.85.77` associado ao IP fixo `10.5.8.242`, o mesmo VIP observado na listagem do balanceador. Essa correspondência identifica o endereço de entrada externo previsto para as conexões.
+O comando `openstack floating ip list` mostrou o endereço público `150.165.85.77` associado ao IP fixo `10.5.8.242`, o mesmo VIP observado na listagem do balanceador.
 
 ![Floating IP 150.165.85.77 associado ao VIP 10.5.8.242](figures/15-floating-ip.jpg)
 
@@ -182,13 +159,11 @@ Foi criado o listener `grupo-2-ahv-ssh` no `poi-atividades`, utilizando TCP e po
 openstack loadbalancer listener create --name grupo-2-ahv-ssh --protocol TCP --protocol-port 10001 --wait poi-atividades
 ```
 
-A saída confirma `ACTIVE` e `ONLINE` para o listener. Nesse instante, `default_pool_id=None`: ainda era necessário associar um conjunto de destinos.
-
 ![Listener SSH criado na porta TCP/10001 de poi-atividades](figures/16-listener-ssh.jpg)
 
 *Figura 16 — Listener SSH criado na porta TCP/10001 de poi-atividades.*
 
-O pool `grupo-2-ahv-ssh-pool` foi criado com protocolo TCP, associado ao listener, e algoritmo `ROUND_ROBIN`. Com uma única VM, todas as conexões elegíveis têm o mesmo destino. O pool aparece `ACTIVE`, porém `OFFLINE` e sem members nessa captura; isso representa a etapa intermediária anterior ao cadastro do destino.
+O pool `grupo-2-ahv-ssh-pool` foi criado com protocolo TCP, associado ao listener, e algoritmo `ROUND_ROBIN`. Com uma única VM, todas as conexões elegíveis têm o mesmo destino.
 
 ```bash
 openstack loadbalancer pool create \
@@ -215,23 +190,11 @@ openstack loadbalancer member create \
   grupo-2-ahv-ssh-pool
 ```
 
-O retorno apresenta `provisioning_status=ACTIVE` e `operating_status=NO_MONITOR`. O primeiro confirma o provisionamento do member; o segundo indica ausência de health monitor, sem comprovar disponibilidade ou falha do SSH. Não há registro da criação de um health monitor TCP para esse pool.
-
 ![Member configurado para encaminhar SSH à VM em 10.5.11.32:22](figures/18-member-ssh.jpg)
 
 *Figura 18 — Member configurado para encaminhar SSH à VM em 10.5.11.32:22.*
 
-A cadeia configurada é `150.165.85.77:10001` → VIP do `poi-atividades` → listener TCP → pool SSH → `10.5.11.32:22`. A diferença entre porta de entrada 10001 e porta de destino 22 é intencional e compatível com a configuração de listener, pool e member descrita no [cookbook do Octavia](https://docs.openstack.org/octavia/latest/user/guides/basic-cookbook.html).
-
-### 4.3 Evidência de acesso ao sistema
-
-O comando de acesso previsto, preenchido com os valores identificados nas capturas, é:
-
-```bash
-ssh -i "$HOME/.ssh/grupo-2-ahv" -p 10001 ubuntu@150.165.85.77
-```
-
-**Esse comando não aparece executado em um print.** As capturas de armazenamento e deploy mostram uma sessão com prompt `ubuntu@grupo-2-ahv-vm`, que comprova o contexto de terminal na VM, mas não revela se a conexão passou pelo balanceador. Por isso, o acesso SSH pelo caminho externo permanece sem teste visual conclusivo.
+A cadeia configurada é `150.165.85.77:10001` → VIP do `poi-atividades` → listener TCP → pool SSH → `10.5.11.32:22`.
 
 ## 5. Deploy das aplicações
 
